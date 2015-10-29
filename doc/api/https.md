@@ -35,6 +35,10 @@ added: v0.11.2
 
 See [`http.Server#timeout`][].
 
+### server.keepAliveTimeout
+
+See [`http.Server#keepAliveTimeout`][].
+
 ## https.createServer(options[, requestListener])
 <!-- YAML
 added: v0.3.4

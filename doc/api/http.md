@@ -808,8 +808,22 @@ Note that the socket timeout logic is set up on connection, so
 changing this value only affects *new* connections to the server, not
 any existing connections.
 
-Set to 0 to disable any kind of automatic timeout behavior on incoming
-connections.
+Set to 0 to disable timeout behavior on incoming connections.
+If server.timeout is not 0 and server.keepAliveTimeout is 0,
+server.timeout will be used for keep-alive timeout.
+
+### server.keepAliveTimeout
+
+* {Number} Default = 5000 (5 seconds)
+
+The number of milliseconds for keep-alive timeout, it is a timeout after
+a server finished writing last response and need to wait for additional
+incoming packets before a socket will be destroyed.
+
+If a server receives new packets before keep-alive timeout finished, it
+will renew normal transmitting mode with server.timeout.
+
+Set to 0 to disable keep-alive timeout.
 
 ## Class: http.ServerResponse
 <!-- YAML
