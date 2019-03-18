@@ -61,7 +61,21 @@ assert.throws(() => {
   code: 'ERR_OUT_OF_RANGE',
   name: 'RangeError [ERR_OUT_OF_RANGE]',
   message: 'The value of "length" is out of range. ' +
-           'It must be >= 0 && <= 4. Received -1'
+           'It must be >= 0 && < 4294967296. Received -1'
+});
+
+assert.throws(() => {
+  fs.read(fd,
+          Buffer.allocUnsafe(expected.length),
+          0,
+          5,
+          0,
+          common.mustNotCall());
+}, {
+  code: 'ERR_OUT_OF_RANGE',
+  name: 'RangeError [ERR_OUT_OF_RANGE]',
+  message: 'The value of "length" is out of range. ' +
+           'It must be >= 0 && <= 4. Received 5'
 });
 
 
@@ -113,5 +127,18 @@ assert.throws(() => {
   code: 'ERR_OUT_OF_RANGE',
   name: 'RangeError [ERR_OUT_OF_RANGE]',
   message: 'The value of "length" is out of range. ' +
-           'It must be >= 0 && <= 4. Received -1'
+           'It must be >= 0 && < 4294967296. Received -1'
+});
+
+assert.throws(() => {
+  fs.readSync(fd,
+              Buffer.allocUnsafe(expected.length),
+              0,
+              5,
+              0);
+}, {
+  code: 'ERR_OUT_OF_RANGE',
+  name: 'RangeError [ERR_OUT_OF_RANGE]',
+  message: 'The value of "length" is out of range. ' +
+           'It must be >= 0 && <= 4. Received 5'
 });

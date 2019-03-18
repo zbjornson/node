@@ -539,6 +539,16 @@ void AfterInteger(uv_fs_t* req) {
     req_wrap->Resolve(Integer::New(req_wrap->env()->isolate(), req->result));
 }
 
+void AfterDouble(uv_fs_t* req) {
+  FSReqBase* req_wrap = FSReqBase::from_req(req);
+  FSReqAfterScope after(req_wrap, req);
+
+  if (after.Proceed()) {
+    const double value = static_cast<double>(req->result);
+    req_wrap->Resolve(Number::New(req_wrap->env()->isolate(), value));
+  }
+}
+
 void AfterOpenFileHandle(uv_fs_t* req) {
   FSReqBase* req_wrap = FSReqBase::from_req(req);
   FSReqAfterScope after(req_wrap, req);
@@ -698,9 +708,11 @@ inline FSReqBase* AsyncDestCall(Environment* env,
     enum encoding enc, uv_fs_cb after, Func fn, Args... fn_args) {
   CHECK_NOT_NULL(req_wrap);
   req_wrap->Init(syscall, dest, len, enc);
-  int err = req_wrap->Dispatch(fn, fn_args..., after);
+  req_wrap->Dispatch(fn, fn_args..., after);
+  // bytes read/written can overflow int return type
+  uv_fs_t* uv_req = req_wrap->req();
+  ssize_t err = uv_req->result;
   if (err < 0) {
-    uv_fs_t* uv_req = req_wrap->req();
     uv_req->result = err;
     uv_req->path = nullptr;
     after(uv_req);  // after may delete req_wrap if there is an error
@@ -728,11 +740,14 @@ inline FSReqBase* AsyncCall(Environment* env,
 // the error number and the syscall in the context instead of
 // creating an error in the C++ land.
 // ctx must be checked using value->IsObject() before being passed.
+// Use req.result instead of the return value if it might overflow int.
 template <typename Func, typename... Args>
 inline int SyncCall(Environment* env, Local<Value> ctx, FSReqWrapSync* req_wrap,
     const char* syscall, Func fn, Args... args) {
   env->PrintSyncTrace();
-  int err = fn(env->event_loop(), &(req_wrap->req), args..., nullptr);
+  fn(env->event_loop(), &(req_wrap->req), args..., nullptr);
+  // Return value overflows for large read/write reqs.
+  ssize_t err = req_wrap->req.result;
   if (err < 0) {
     Local<Context> context = env->context();
     Local<Object> ctx_obj = ctx.As<Object>();
@@ -744,7 +759,7 @@ inline int SyncCall(Environment* env, Local<Value> ctx, FSReqWrapSync* req_wrap,
              env->syscall_string(),
              OneByteString(isolate, syscall)).FromJust();
   }
-  return err;
+  return static_cast<int>(err);
 }
 
 // TODO(addaleax): Currently, callers check the return value and assume
@@ -1832,7 +1847,7 @@ static void WriteString(const FunctionCallbackInfo<Value>& args) {
  * 0 fd        int32. file descriptor
  * 1 buffer    instance of Buffer
  * 2 offset    int64. offset to start reading into inside buffer
- * 3 length    int32. length to read
+ * 3 length    uint32. length to read
  * 4 position  int64. file position - -1 for current position
  */
 static void Read(const FunctionCallbackInfo<Value>& args) {
@@ -1855,8 +1870,8 @@ static void Read(const FunctionCallbackInfo<Value>& args) {
   CHECK_LT(static_cast<uint64_t>(off_64), buffer_length);
   const size_t off = static_cast<size_t>(off_64);
 
-  CHECK(args[3]->IsInt32());
-  const size_t len = static_cast<size_t>(args[3].As<Int32>()->Value());
+  CHECK(args[3]->IsUint32());
+  const size_t len = static_cast<size_t>(args[3].As<Uint32>()->Value());
   CHECK(Buffer::IsWithinBounds(off, len, buffer_length));
 
   CHECK(IsSafeJsInt(args[4]));
@@ -1867,14 +1882,15 @@ static void Read(const FunctionCallbackInfo<Value>& args) {
 
   FSReqBase* req_wrap_async = GetReqWrap(env, args[5]);
   if (req_wrap_async != nullptr) {  // read(fd, buffer, offset, len, pos, req)
-    AsyncCall(env, req_wrap_async, args, "read", UTF8, AfterInteger,
+    AsyncCall(env, req_wrap_async, args, "read", UTF8, AfterDouble,
               uv_fs_read, fd, &uvbuf, 1, pos);
   } else {  // read(fd, buffer, offset, len, pos, undefined, ctx)
     CHECK_EQ(argc, 7);
     FSReqWrapSync req_wrap_sync;
     FS_SYNC_TRACE_BEGIN(read);
-    const int bytesRead = SyncCall(env, args[6], &req_wrap_sync, "read",
-                                   uv_fs_read, fd, &uvbuf, 1, pos);
+    SyncCall(env, args[6], &req_wrap_sync, "read",
+             uv_fs_read, fd, &uvbuf, 1, pos);
+    const double bytesRead = static_cast<double>(req_wrap_sync.req.result);
     FS_SYNC_TRACE_END(read, "bytesRead", bytesRead);
     args.GetReturnValue().Set(bytesRead);
   }
