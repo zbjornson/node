@@ -168,6 +168,10 @@ void DumpBacktrace(FILE* fp);
 
 #define UNREACHABLE() ABORT()
 
+constexpr int64_t kMaxSafeJsInteger = 9007199254740991;  // 2^53-1
+
+inline bool IsSafeJsInt(v8::Local<v8::Value> v);
+
 // TAILQ-style intrusive list node.
 template <typename T>
 class ListNode;
